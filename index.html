@@ -1,0 +1,321 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MAL Recommender — free, no‑backend</title>
+  <meta name="description" content="Upload your MyAnimeList (MAL) export and get smart anime recommendations, all in your browser. No signup, no server." />
+  <link rel="icon" href="https://fav.farm/🎌" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .shimmer { background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.35) 50%, rgba(255,255,255,0) 100%); background-size: 200% 100%; animation: shimmer 1.25s infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  </style>
+</head>
+<body class="min-h-screen bg-neutral-950 text-neutral-100 selection:bg-indigo-400 selection:text-neutral-900">
+  <header class="sticky top-0 z-50 border-b border-white/10 bg-neutral-950/70 backdrop-blur">
+    <div class="mx-auto max-w-5xl px-4 py-3 flex items-center gap-3">
+      <div class="size-8 rounded-xl bg-indigo-500 flex items-center justify-center font-black">ア</div>
+      <h1 class="text-lg font-bold tracking-tight">MAL Recommender</h1>
+      <span class="ml-auto text-xs text-white/60">100% client‑side • free</span>
+    </div>
+  </header>  <main class="mx-auto max-w-5xl px-4 py-8">
+    <section class="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 to-transparent p-5 md:p-7">
+      <h2 class="text-2xl md:text-3xl font-semibold leading-tight">Get anime picks from your <span class="text-indigo-400">MAL</span> list</h2>
+      <p class="mt-2 text-sm md:text-base text-white/70">No account or backend needed. Upload your MAL list export (XML), we detect your top‑rated shows, pull related recommendations from Jikan (unofficial MAL API), and filter out what you’ve already seen — all in your browser.</p><div class="mt-5 grid gap-4 sm:grid-cols-2">
+    <label class="block rounded-xl border border-white/10 bg-white/5 p-4">
+      <span class="text-sm font-medium">1) Upload MAL export (.xml)</span>
+      <input id="file" type="file" accept=".xml,.zip" class="mt-2 block w-full text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-400" />
+      <p class="mt-2 text-xs text-white/60">On MAL: <em>List → Export</em> (XML). If you got a ZIP, just upload it — we’ll read the XML inside.</p>
+    </label>
+    <div class="rounded-xl border border-white/10 bg-white/5 p-4">
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-medium">2) Options</span>
+        <button id="demoBtn" class="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-xs hover:bg-white/20">Try demo list</button>
+      </div>
+      <label class="mt-3 flex items-center gap-2 text-sm">
+        <input id="skipHentai" type="checkbox" checked class="h-4 w-4 rounded border-white/20 bg-white/10" />
+        Skip hentai (filter by MAL rating)
+      </label>
+      <label class="mt-2 flex items-center gap-2 text-sm">
+        <input id="preferHighScores" type="checkbox" checked class="h-4 w-4 rounded border-white/20 bg-white/10" />
+        Base recs on your highest scores first
+      </label>
+      <label class="mt-2 flex items-center gap-2 text-sm">
+        <input id="includeWatching" type="checkbox" class="h-4 w-4 rounded border-white/20 bg-white/10" />
+        Treat “Watching/On‑Hold/Dropped” as seen
+      </label>
+      <label class="mt-2 flex items-center gap-2 text-sm">
+        <input id="limitRecs" type="range" min="8" max="36" value="24" class="w-full" />
+        <span class="text-xs text-white/60">Max cards: <span id="limitVal">24</span></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="mt-4 flex flex-wrap items-center gap-3">
+    <button id="run" class="rounded-2xl bg-indigo-500 px-5 py-2.5 text-sm font-semibold hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50">Get recommendations</button>
+    <span id="status" class="text-sm text-white/70"></span>
+  </div>
+</section>
+
+<section id="results" class="mt-8 hidden">
+  <div class="mb-3 flex items-center justify-between">
+    <h3 class="text-xl font-semibold">Your recommendations</h3>
+    <button id="share" class="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-xs hover:bg-white/20">Save results</button>
+  </div>
+  <div id="grid" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"></div>
+</section>
+
+<section class="mt-10 text-xs leading-relaxed text-white/60">
+  <p><strong>Heads‑up:</strong> User anime lists via Jikan were discontinued in 2022; this tool relies on your official MAL <em>export</em> file and public recommendation data only. API calls are rate‑limited, so generating picks can take a bit on large lists.</p>
+</section>
+
+  </main>  <template id="cardTpl">
+    <a class="group relative block overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+      <div class="aspect-[2/3] bg-white/5">
+        <div class="poster h-full w-full bg-center bg-cover"></div>
+        <div class="skeleton absolute inset-0 shimmer opacity-10"></div>
+      </div>
+      <div class="p-3">
+        <h4 class="line-clamp-2 text-sm font-medium title"></h4>
+        <p class="mt-1 text-xs text-white/60 reason"></p>
+      </div>
+    </a>
+  </template>  <script>
+  // ----------- tiny utils -----------
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const status = (msg) => { $('#status').textContent = msg || ''; };
+  const setBusy = (on) => { $('#run').disabled = !!on; };
+
+  // Persist last run in URL using a share blob
+  async function saveResults(results) {
+    const blob = new Blob([JSON.stringify(results)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Saved! The link to these results is now in your clipboard.');
+    } catch (e) {
+      alert('Saved! Scroll up and bookmark this page to keep the link.');
+    }
+  }
+
+  // ----------- MAL XML parsing -----------
+  async function readFile(file) {
+    if (!file) throw new Error('No file');
+    if (file.name.endsWith('.zip')) {
+      // use zip.js via CDN to read XML inside a zip
+      await import('https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.7.54/dist/zip.min.js');
+      const reader = new zip.BlobReader(file);
+      const zipReader = new zip.ZipReader(reader);
+      const entries = await zipReader.getEntries();
+      const xmlEntry = entries.find(e => /\.xml$/i.test(e.filename));
+      if (!xmlEntry) throw new Error('ZIP has no .xml inside');
+      const text = await xmlEntry.getData(new zip.TextWriter());
+      await zipReader.close();
+      return text;
+    } else {
+      return await file.text();
+    }
+  }
+
+  function parseMALXML(xmlText) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, 'application/xml');
+    if (xml.querySelector('parsererror')) throw new Error('Could not read MAL XML');
+
+    const anime = Array.from(xml.querySelectorAll('anime')).map(n => {
+      const pick = (q) => n.querySelector(q)?.textContent?.trim() || '';
+      return {
+        id: Number(pick('series_animedb_id')),
+        title: pick('series_title'),
+        score: Number(pick('my_score') || 0),
+        status: pick('my_status'), // numeric string
+        watched: Number(pick('my_watched_episodes') || 0),
+      };
+    }).filter(x => x.id > 0);
+
+    return anime;
+  }
+
+  function deriveSeen(anime, includeWatching) {
+    const seen = new Set();
+    for (const a of anime) {
+      const st = String(a.status);
+      const isCompleted = st === '2';
+      const isWatchingLike = st === '1' || st === '3' || st === '4'; // watching, on-hold, dropped
+      if (isCompleted || (includeWatching && isWatchingLike)) {
+        seen.add(a.id);
+      }
+    }
+    return seen;
+  }
+
+  function pickFavorites(anime, preferHighScores) {
+    const scored = anime.filter(a => a.score > 0);
+    if (preferHighScores && scored.length) {
+      const top = [...scored].sort((a,b) => b.score - a.score).slice(0, 12);
+      return top;
+    }
+    // fallback: most watched episodes (rough proxy) then title
+    return [...anime].sort((a,b) => (b.watched - a.watched) || a.title.localeCompare(b.title)).slice(0, 10);
+  }
+
+  // ----------- Jikan fetchers (3 req/s limit) -----------
+  async function jikan(path) {
+    const url = `https://api.jikan.moe/v4${path}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Jikan error ${r.status}`);
+    return r.json();
+  }
+
+  async function getRecommendationsFor(id) {
+    const json = await jikan(`/anime/${id}/recommendations`);
+    return json.data || [];
+  }
+
+  async function getAnimeDetails(id) {
+    const json = await jikan(`/anime/${id}`);
+    return json.data;
+  }
+
+  function isHentai(details) {
+    const rating = details?.rating || '';
+    if (/Rx\s*-\s*Hentai/i.test(rating)) return true;
+    const explicit = (details?.explicit_genres || []).map(g => g.name.toLowerCase());
+    return explicit.includes('hentai');
+  }
+
+  function makeCard(entry, reasonText) {
+    const tpl = $('#cardTpl').content.cloneNode(true);
+    const a = tpl.querySelector('a');
+    const poster = tpl.querySelector('.poster');
+    const title = tpl.querySelector('.title');
+    const reason = tpl.querySelector('.reason');
+
+    a.href = entry.url || `https://myanimelist.net/anime/${entry.mal_id}`;
+    a.target = '_blank';
+    poster.style.backgroundImage = `url(${entry.images?.jpg?.image_url || entry.images?.webp?.image_url || ''})`;
+    title.textContent = entry.title || 'Unknown title';
+    reason.textContent = reasonText;
+    return tpl;
+  }
+
+  async function runRecsFromXML(xmlText, opts) {
+    const { skipHentai, preferHighScores, includeWatching, limit } = opts;
+
+    status('Reading your MAL export…');
+    const anime = parseMALXML(xmlText);
+    if (!anime.length) throw new Error('Your export has no <anime> entries');
+
+    const seen = deriveSeen(anime, includeWatching);
+    const favs = pickFavorites(anime, preferHighScores);
+
+    // Aggregate recs from each favorite
+    status('Pulling similar shows from Jikan…');
+    const aggregated = new Map(); // id -> {count, by:Set(source titles)}
+    let step = 0;
+    for (const f of favs) {
+      step++;
+      status(`Finding recs for “${f.title}” (${step}/${favs.length})…`);
+      try {
+        const recs = await getRecommendationsFor(f.id);
+        for (const r of recs) {
+          const id = r.entry?.mal_id;
+          if (!id || seen.has(id)) continue;
+          const key = String(id);
+          if (!aggregated.has(key)) aggregated.set(key, { entry: r.entry, count: 0, sources: new Set() });
+          const agg = aggregated.get(key);
+          agg.count += (r.votes || 1);
+          agg.sources.add(f.title);
+        }
+      } catch (e) {
+        console.warn('Failed recs for', f.id, e);
+      }
+      await sleep(450); // be kind to rate limits
+    }
+
+    if (!aggregated.size) throw new Error('No recommendations found (maybe your list has no scores yet?).');
+
+    const top = [...aggregated.values()]
+      .sort((a,b) => b.count - a.count)
+      .slice(0, Math.max(8, limit + 6)); // overfetch for filtering later
+
+    // Fetch details for posters + optional hentai filter
+    const detailed = [];
+    let i = 0;
+    for (const rec of top) {
+      i++;
+      status(`Checking details (${i}/${top.length})…`);
+      try {
+        const details = await getAnimeDetails(rec.entry.mal_id);
+        if (skipHentai && isHentai(details)) { await sleep(350); continue; }
+        detailed.push({ entry: details, sources: rec.sources, count: rec.count });
+      } catch (e) {
+        console.warn('detail fail', rec.entry.mal_id, e);
+      }
+      await sleep(350);
+    }
+
+    const final = detailed.slice(0, limit);
+
+    // Render
+    const grid = $('#grid');
+    grid.innerHTML = '';
+    for (const r of final) {
+      const because = `Because you liked: ${Array.from(r.sources).slice(0,3).join(', ')}`;
+      grid.appendChild(makeCard(r.entry, because));
+    }
+
+    $('#results').classList.remove('hidden');
+    status(`Done. ${final.length} picks for you.`);
+
+    return final.map(x => ({ id: x.entry.mal_id, title: x.entry.title, sources: Array.from(x.sources), score: x.entry.score || null }));
+  }
+
+  // ----------- wire up UI -----------
+  $('#limitRecs').addEventListener('input', (e) => { $('#limitVal').textContent = e.target.value; });
+
+  $('#demoBtn').addEventListener('click', async () => {
+    const demoXML = `<?xml version="1.0" encoding="UTF-8"?>\n<myanimelist>\n<anime>\n<series_animedb_id>1</series_animedb_id>\n<series_title>Cowboy Bebop</series_title>\n<my_score>9</my_score>\n<my_status>2</my_status>\n<my_watched_episodes>26</my_watched_episodes>\n</anime>\n<anime>\n<series_animedb_id>5114</series_animedb_id>\n<series_title>Fullmetal Alchemist: Brotherhood</series_title>\n<my_score>10</my_score>\n<my_status>2</my_status>\n<my_watched_episodes>64</my_watched_episodes>\n</anime>\n<anime>\n<series_animedb_id>9253</series_animedb_id>\n<series_title>Steins;Gate</series_title>\n<my_score>9</my_score>\n<my_status>2</my_status>\n<my_watched_episodes>24</my_watched_episodes>\n</anime>\n</myanimelist>`;
+    $('#file').value = '';
+    setBusy(true);
+    try {
+      const results = await runRecsFromXML(demoXML, collectOptions());
+      $('#share').onclick = () => saveResults(results);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  function collectOptions() {
+    return {
+      skipHentai: $('#skipHentai').checked,
+      preferHighScores: $('#preferHighScores').checked,
+      includeWatching: $('#includeWatching').checked,
+      limit: Number($('#limitRecs').value),
+    };
+  }
+
+  $('#run').addEventListener('click', async () => {
+    const file = $('#file').files?.[0];
+    if (!file) { alert('Choose your MAL export (.xml or .zip) first.'); return; }
+    setBusy(true);
+    try {
+      const xmlText = await readFile(file);
+      const results = await runRecsFromXML(xmlText, collectOptions());
+      $('#share').onclick = () => saveResults(results);
+    } catch (e) {
+      alert(e.message || 'Something went wrong.');
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  </script></body>
+</html>
